@@ -1,34 +1,15 @@
-import { SignJWT, jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "dev-secret-change-me"
-);
-
-export const SESSION_COOKIE = "applux_session";
-
-export type Session = { userId: string; email: string };
-
-export async function signSession(payload: Session): Promise<string> {
-  return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("30d")
-    .sign(SECRET);
-}
-
-export async function verifySession(token: string): Promise<Session | null> {
-  try {
-    const { payload } = await jwtVerify(token, SECRET);
-    return { userId: payload.userId as string, email: payload.email as string };
-  } catch {
-    return null;
-  }
-}
+export type Session = { userId: string; email: string; name: string };
 
 export async function getSession(): Promise<Session | null> {
-  const jar = cookies();
-  const token = jar.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  return verifySession(token);
+  const supabase = createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return null;
+
+  return {
+    userId: user.id,
+    email: user.email || "",
+    name: (user.user_metadata?.name as string) || user.email?.split("@")[0] || "User",
+  };
 }
