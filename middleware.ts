@@ -3,8 +3,12 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  url = url.replace(/\/rest\/v1\/?$/, "").replace(/\/+$/, "");
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "";
 
   if (!url || !key) return response;
 
@@ -25,9 +29,9 @@ export async function middleware(request: NextRequest) {
   const isAuthPage = pathname === "/login" || pathname === "/register";
 
   if ((isProtected && !user) || (isAuthPage && user)) {
-    const url = request.nextUrl.clone();
-    url.pathname = isProtected ? "/login" : "/dashboard";
-    const redirect = NextResponse.redirect(url);
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = isProtected ? "/login" : "/dashboard";
+    const redirect = NextResponse.redirect(redirectUrl);
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
     return redirect;
   }
