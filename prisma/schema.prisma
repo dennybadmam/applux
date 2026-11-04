@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  accounts     ConnectedAccount[]
+  messages     Message[]
+}
+
+model ConnectedAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String   // github | vercel | cloudflare | resend
+  token     String   // OAuth token or API key (encrypt at rest for production)
+  meta      String?  // JSON blob: username, scopes, etc.
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String   // user | assistant
+  model     String?  // septo-1.8 | septo-1.6
+  content   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

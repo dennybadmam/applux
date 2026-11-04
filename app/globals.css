@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --grid-line: #E4E8EF;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-ink antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
+}
+
+/* Sharp grid backdrop — the "gridiron" texture */
+.gridiron {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.gridiron-dark {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 border border-primary-dark bg-primary px-6 py-3 font-semibold text-white transition-colors hover:bg-primary-dark;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 border border-ink bg-white px-6 py-3 font-semibold text-ink transition-colors hover:bg-surface;
+  }
+  .input-field {
+    @apply w-full border border-grid bg-white px-4 py-3 text-ink outline-none transition-colors placeholder:text-ink-faint focus:border-primary;
+  }
+  .label-field {
+    @apply mb-2 block font-mono text-xs font-medium uppercase tracking-widest text-ink-soft;
+  }
+  .card {
+    @apply border border-grid bg-white;
+  }
+  .section-label {
+    @apply font-mono text-xs font-medium uppercase tracking-[0.2em] text-primary;
+  }
+}
