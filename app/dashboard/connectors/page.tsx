@@ -10,9 +10,13 @@ export default function ConnectorsPage() {
   const [notice, setNotice] = useState<string | null>(null);
 
   async function refresh() {
-    const res = await fetch("/api/connectors");
-    const data = await res.json();
-    setConnected((data.accounts || []).map((a: { provider: string }) => a.provider));
+    try {
+      const res = await fetch("/api/connectors");
+      const data = await res.json();
+      setConnected((data.accounts || []).map((a: { provider: string }) => a.provider));
+    } catch {
+      // Silent error on refresh
+    }
   }
 
   useEffect(() => {
@@ -21,28 +25,37 @@ export default function ConnectorsPage() {
 
   async function save(provider: string) {
     setNotice(null);
-    const res = await fetch("/api/connectors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, token }),
-    });
-    if (res.ok) {
-      setToken("");
-      setTokenFor(null);
-      setNotice(provider + " connected.");
-      refresh();
-    } else {
-      setNotice("Could not save that token.");
+    try {
+      const res = await fetch("/api/connectors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, token }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setToken("");
+        setTokenFor(null);
+        setNotice(provider + " connected successfully.");
+        refresh();
+      } else {
+        setNotice(data.error || "Could not save that key.");
+      }
+    } catch {
+      setNotice("Network error saving connector.");
     }
   }
 
   async function disconnect(provider: string) {
-    await fetch("/api/connectors", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider }),
-    });
-    refresh();
+    try {
+      await fetch("/api/connectors", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      refresh();
+    } catch {
+      // Silent error
+    }
   }
 
   function githubOauth() {
@@ -67,8 +80,8 @@ export default function ConnectorsPage() {
         Connect your stack.
       </h1>
       <p className="mt-2 max-w-xl text-sm text-ink-soft">
-        Link your accounts so Septo can work directly on your infrastructure —
-        repos, deployments, domains and email.
+        Link your AI keys and accounts so Septo can work directly on your infrastructure —
+        chat models, repos, deployments, domains, and email.
       </p>
 
       {notice && (
@@ -80,6 +93,7 @@ export default function ConnectorsPage() {
       <div className="mt-8 space-y-px border border-grid bg-grid">
         {CONNECTORS.map((c) => {
           const isOn = connected.includes(c.id);
+          const isApiKey = c.id === "gemini" || c.id === "mistral";
           return (
             <div
               key={c.id}
@@ -110,7 +124,7 @@ export default function ConnectorsPage() {
                       type="password"
                       value={token}
                       onChange={(e) => setToken(e.target.value)}
-                      placeholder={c.name + " token"}
+                      placeholder={isApiKey ? `${c.name} API key` : `${c.name} token`}
                       className="w-52 border border-grid px-3 py-2 text-sm outline-none focus:border-primary"
                     />
                     <button
@@ -145,7 +159,7 @@ export default function ConnectorsPage() {
                     onClick={() => setTokenFor(c.id)}
                     className="border border-ink px-4 py-2 text-sm font-semibold text-ink hover:bg-surface"
                   >
-                    Add token
+                    {isApiKey ? "Add API key" : "Add token"}
                   </button>
                 )}
               </div>

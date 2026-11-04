@@ -94,7 +94,7 @@ export default function Landing() {
           <h2 className="mt-4 max-w-2xl text-3xl font-bold tracking-tight md:text-4xl">
             Your accounts. Your infrastructure. One platform.
           </h2>
-          <div className="mt-12 grid grid-cols-1 gap-px border border-grid bg-grid md:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid grid-cols-1 gap-px border border-grid bg-grid md:grid-cols-2 lg:grid-cols-3">
             {CONNECTORS.map((c) => (
               <div key={c.id} className="bg-white p-8">
                 <div className="flex h-10 w-10 items-center justify-center border border-ink font-mono text-sm font-medium">
