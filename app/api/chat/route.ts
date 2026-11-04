@@ -47,65 +47,88 @@ async function callGemini(
   }
 
   const configuredModel = process.env.GEMINI_MODEL?.trim();
-  const candidateModels = [
+  // Gemini 1.5 is retired; prefer current Flash models and keep older,
+  // still-supported choices only as fallbacks for account availability.
+  const candidateModels = Array.from(new Set([
     configuredModel,
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-  ].filter(Boolean) as string[];
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-2.5-flash",
+  ].filter(Boolean) as string[]));
 
   let lastError = "";
 
   for (const model of candidateModels) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
-          contents,
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 4096,
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
           },
-        }),
-      });
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 4096,
+            },
+          }),
+        });
 
-      if (!res.ok) {
-        const raw = await res.text();
-        let message = `Gemini API error (${res.status})`;
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed.error?.message) {
-            message = parsed.error.message;
+        if (!res.ok) {
+          const raw = await res.text();
+          let message = `Gemini API error (${res.status})`;
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.error?.message) {
+              message = parsed.error.message;
+            }
+          } catch {
+            message += `: ${raw.slice(0, 160)}`;
           }
-        } catch {
-          message += `: ${raw.slice(0, 160)}`;
+          lastError = message;
+
+          // Temporary overload or rate limit: wait briefly on attempt 0, else try next candidate model
+          if (res.status === 503 || res.status === 429) {
+            if (attempt === 0) {
+              await new Promise((r) => setTimeout(r, 1200));
+              continue;
+            }
+            break;
+          }
+
+          // Model not found or invalid for this API version: skip to next model
+          if (res.status === 404 || res.status === 400) {
+            break;
+          }
+
+          throw new Error(message);
         }
-        lastError = message;
 
-        // Try fallback if model was not found
-        if (res.status === 404) continue;
-        throw new Error(message);
-      }
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (typeof text === "string") return text;
 
-      const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (typeof text === "string") return text;
-
-      const finishReason = data.candidates?.[0]?.finishReason;
-      if (finishReason && finishReason !== "STOP") {
-        throw new Error(`Gemini response stopped (${finishReason})`);
+        const finishReason = data.candidates?.[0]?.finishReason;
+        if (finishReason && finishReason !== "STOP") {
+          throw new Error(`Gemini response stopped (${finishReason})`);
+        }
+        return "";
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          (err.message.includes("404") ||
+            err.message.includes("503") ||
+            err.message.includes("429") ||
+            err.message.includes("not found"))
+        ) {
+          break;
+        }
+        throw err;
       }
-      return "";
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("404")) {
-        continue;
-      }
-      throw err;
     }
   }
 
@@ -126,10 +149,14 @@ async function callMistral(
   }
 
   const configuredModel = process.env.MISTRAL_MODEL?.trim();
+  // codestral-latest and mistral-small-latest work on free/standard plans
+  // whereas mistral-large-latest often returns 429 "Rate limit exceeded"
   const candidateModels = [
     configuredModel,
-    "mistral-large-latest",
+    "codestral-latest",
     "mistral-small-latest",
+    "open-mistral-nemo",
+    "mistral-large-latest",
   ].filter(Boolean) as string[];
 
   let lastError = "";
@@ -162,8 +189,13 @@ async function callMistral(
         }
         lastError = message;
 
-        // If mistral-large is not permitted on this account tier or 404/422, try mistral-small
-        if (res.status === 404 || res.status === 403 || res.status === 422) {
+        // Fall back on Rate limit (429), model permission (403), or not found/unsupported (404/422)
+        if (
+          res.status === 429 ||
+          res.status === 403 ||
+          res.status === 404 ||
+          res.status === 422
+        ) {
           continue;
         }
         throw new Error(message);
@@ -174,7 +206,13 @@ async function callMistral(
       if (typeof text === "string") return text;
       return "";
     } catch (err) {
-      if (err instanceof Error && (err.message.includes("404") || err.message.includes("403"))) {
+      if (
+        err instanceof Error &&
+        (err.message.includes("429") ||
+          err.message.includes("403") ||
+          err.message.includes("404") ||
+          err.message.includes("Rate limit"))
+      ) {
         continue;
       }
       throw err;
@@ -187,7 +225,10 @@ async function callMistral(
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) {
-    return NextResponse.json({ error: "Unauthorized. Please log in first." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized. Please log in first." },
+      { status: 401 }
+    );
   }
 
   let body: { model?: SeptoModel; messages?: ChatMessage[] } = {};
@@ -202,7 +243,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid model selected" }, { status: 400 });
   }
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return NextResponse.json({ error: "Messages array cannot be empty" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Messages array cannot be empty" },
+      { status: 400 }
+    );
   }
 
   const cfg = MODELS[model];
